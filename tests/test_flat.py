@@ -40,6 +40,12 @@ class TestFlat(object):
         assert user.id == 0
         assert user.created_at == now
 
+        user_ressource = users_resource.retrieve(0, 0)
+        user = user_resource.data
+        assert user.organization_id == 0
+        assert user.id == 0
+        assert user.created_at == now
+
         user_resource.update(name='updated')
         user = user_resource.data
         assert user.name == 'updated'
