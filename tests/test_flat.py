@@ -4,7 +4,6 @@ from datetime import datetime
 
 from hieratic.collection import CollectionResource
 from hieratic.index import SimpleIndex
-from hieratic.exceptions import NotFoundError
 
 
 @fixture
@@ -49,7 +48,7 @@ class TestFlat(object):
         user = user_resource.data
         assert user is None
 
-        with raises(NotFoundError):
+        with raises(KeyError):
             users_resource['0_0']
 
         with CollectionResource.get_context('dynamodb') as context:
