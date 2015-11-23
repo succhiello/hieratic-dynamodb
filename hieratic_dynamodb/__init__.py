@@ -84,6 +84,9 @@ class Collection(CollectionEngine):
             kwargs['{}__eq'.format(parent_key_value[0])] = parent_key_value[1]
         return self.__table.query(index=index, **kwargs)
 
+    def bulk_get_raw_items(self, **kwargs):
+        return self.__table.batch_get(**kwargs)
+
     @classmethod
     def get_context(cls, *args, **kwargs):
         return Context()
