@@ -6,7 +6,6 @@ from boto.dynamodb2.table import Table
 from boto.dynamodb2.exceptions import ItemNotFound
 
 from hieratic.engine import ItemEngine, CollectionEngine
-from hieratic.exceptions import NotFoundError
 
 from hieratic_dynamodb.context import Context
 
@@ -76,7 +75,7 @@ class Collection(CollectionEngine):
         try:
             return self.__table.get_item(**key_dict)
         except ItemNotFound:
-            raise NotFoundError('item({}) not found.'.format(dict(key_dict)))
+            raise KeyError(key_dict)
         except:
             raise
 
@@ -84,6 +83,9 @@ class Collection(CollectionEngine):
         if parent_key_value is not None:
             kwargs['{}__eq'.format(parent_key_value[0])] = parent_key_value[1]
         return self.__table.query(index=index, **kwargs)
+
+    def bulk_get_raw_items(self, **kwargs):
+        return self.__table.batch_get(**kwargs)
 
     @classmethod
     def get_context(cls, *args, **kwargs):

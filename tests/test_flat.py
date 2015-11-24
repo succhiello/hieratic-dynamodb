@@ -4,7 +4,6 @@ from datetime import datetime
 
 from hieratic.collection import CollectionResource
 from hieratic.index import SimpleIndex
-from hieratic.exceptions import NotFoundError
 
 
 @fixture
@@ -41,6 +40,12 @@ class TestFlat(object):
         assert user.id == 0
         assert user.created_at == now
 
+        user_ressource = users_resource.retrieve(0, 0)
+        user = user_resource.data
+        assert user.organization_id == 0
+        assert user.id == 0
+        assert user.created_at == now
+
         user_resource.update(name='updated')
         user = user_resource.data
         assert user.name == 'updated'
@@ -49,7 +54,7 @@ class TestFlat(object):
         user = user_resource.data
         assert user is None
 
-        with raises(NotFoundError):
+        with raises(KeyError):
             users_resource['0_0']
 
         with CollectionResource.get_context('dynamodb') as context:
@@ -59,3 +64,9 @@ class TestFlat(object):
             assert len(list(users_resource.query(organization_id__eq=0))) == 0
 
         assert [1, 2, 3] == [u_res.data.id for u_res in users_resource.query(organization_id__eq=0, reverse=True)]
+
+        assert [1, 3] == [
+            u_res.data.id for u_res in
+            users_resource.bulk_get(keys=[{'organization_id': 0, 'id': 1},
+                                          {'organization_id': 0, 'id': 3}])
+        ]
