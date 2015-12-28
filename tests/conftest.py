@@ -7,7 +7,7 @@ from pytest import fixture
 
 from voluptuous import Optional, All, Any, Range, Coerce
 
-from typedtuple import TypedTuple
+from typedtuple import typedtuple
 
 from boto.dynamodb2 import connect_to_region
 from boto.dynamodb2.table import Table
@@ -111,12 +111,12 @@ def user_table(request, ddb):
 
 @fixture
 def Organization():
-    return TypedTuple('Organization', {'id': IdSchema, Optional('name'): six_string, Optional('created_at'): dt})
+    return typedtuple('Organization', {'id': IdSchema, Optional('name'): six_string, Optional('created_at'): dt})
 
 
 @fixture
 def User():
-    return TypedTuple('User', {'organization_id': IdSchema, 'id': IdSchema, Optional('name'): six_string, Optional('created_at'): dt})
+    return typedtuple('User', {'organization_id': IdSchema, 'id': IdSchema, Optional('name'): six_string, Optional('created_at'): dt})
 
 
 @fixture
