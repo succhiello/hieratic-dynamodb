@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 requires = [
-    'hieratic>=0.0.3',
+    'hieratic>=0.0.4',
     'six>=1.9.0',
     'boto>=2.27.0',
 ]
@@ -11,9 +11,9 @@ setup(
     name='hieratic_dynamodb',
     version='0.0.2',
     description='dynamodb plugin for hieratic.',
-    author='xica development team',
-    author_email='info@xica.net',
-    url='https://github.com/xica/hieratic-dynamodb',
+    author='Satoshi Ebihara',
+    author_email='succhiello@gmail.com',
+    url='https://github.com/succhiello/hieratic-dynamodb',
     license='MIT',
     classifiers=[
         'Development Status :: 3 - Alpha',

@@ -65,8 +65,8 @@ class TestFlat(object):
 
         assert [1, 2, 3] == [u_res.data.id for u_res in users_resource.query(organization_id__eq=0, reverse=True)]
 
-        assert [1, 3] == [
+        assert [1, 3] == sorted(
             u_res.data.id for u_res in
             users_resource.bulk_get(keys=[{'organization_id': 0, 'id': 1},
                                           {'organization_id': 0, 'id': 3}])
-        ]
+        )
