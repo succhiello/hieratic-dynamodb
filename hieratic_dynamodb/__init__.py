@@ -1,4 +1,5 @@
 from six import iteritems
+from six.moves import reduce
 
 from collections import MutableMapping
 
@@ -17,25 +18,24 @@ class Item(ItemEngine):
         ItemEngine.__init__(self, collection, raw_item)
         self.__item = raw_item
 
-    def update(self, patch, context, updates):
+    def update(self, index, patch, context, updates):
         if patch:
-            self.collection.table.update_item()
-            for k, v in iteritems(updates):
-                self.__item[k] = v
-            self.__item.partial_save()
+            self.collection.table.update_item(
+                Key=index,
+                UpdateExpression=self.__make_update_expression_args(updates),
+            )
         else:
             if context is None:
-                self.__item = BotoItem(self.__item.table, updates)
-                self.__item.save(True)
+                self.collection.table.put_item(Item=updates)
             else:
-                context.put_item(self.__table, updates)
+                context.put_item(self.collection.table, updates)
 
     def delete(self, index, context):
         if context is None:
-            self.__item.delete()
+            self.collection.table.delete_item(Key=index)
         else:
             context.delete_item(
-                self.__table,
+                self.collection.table,
                 **(index.make_key_dict_from_dict(self.get_dict()))
             )
 
@@ -43,17 +43,17 @@ class Item(ItemEngine):
         return self.__item._data
 
     def __make_update_expression_args(self, updates):
-        flattened = self.__flatten_dict(updates)
+        flattened = self.__flatten_dict(updates, [], [])
         return {
-            UpdateExpression: 'set {0}'.format(['{0}={1}'.format(x[0], x[1]) for x in flattened].join(', ')),
-            ExpressionAttributeValues=dict([(x[1], x[2]) for x in flattened])
+            'UpdateExpression': 'set {0}'.format(['{0}={1}'.format(x[0], x[1]) for x in flattened].join(', ')),
+            'ExpressionAttributeValues': dict([(x[1], x[2]) for x in flattened]),
         }
     
     def __flatten_dict(self, v, keys, acc):
         if isinstance(v, MutableMapping):
             return reduce(lambda a, x: self.__flatten_dict(x[1], keys + [x[0]], a), iteritems(v), acc)
         else:
-            return acc + [('.'.join(keys), ':{0}'.format('_'.join(keys), v)]
+            return acc + [('.'.join(keys), ':{0}'.format('_'.join(keys)), v)]
 
 
 class Collection(CollectionEngine):
