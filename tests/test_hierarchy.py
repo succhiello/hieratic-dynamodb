@@ -3,6 +3,8 @@ from pytest import fixture, raises
 from time import mktime
 from datetime import datetime
 
+from boto3.dynamodb.conditions import Key
+
 from hieratic import Resource
 from hieratic.item import ItemResource
 from hieratic.collection import CollectionResource
@@ -18,7 +20,16 @@ def UsersResource(UserResource, ddb_region, ddb_host, ddb_port):
     )
     class UsersRes(CollectionResource):
         def __init__(self, parent, name):
-            CollectionResource.__init__(self, parent, name, 'dynamodb', 'HieraticDynamoDBTestUser', ddb_region, ddb_host, False, ddb_port)
+            CollectionResource.__init__(
+                self,
+                parent,
+                name,
+                'dynamodb',
+                'HieraticDynamoDBTestUser',
+                region_name=ddb_region,
+                use_ssl=False,
+                endpoint_url='{}:{}'.format(ddb_host, ddb_port),
+            )
 
     return UsersRes
 
@@ -50,7 +61,16 @@ def OrganizationsResource(OrganizationResource, ddb_region, ddb_host, ddb_port):
     )
     class OrganizationsRes(CollectionResource):
         def __init__(self, parent, name):
-            CollectionResource.__init__(self, parent, name, 'dynamodb', 'HieraticDynamoDBTestOrganization', ddb_region, ddb_host, False, ddb_port)
+            CollectionResource.__init__(
+                self,
+                parent,
+                name,
+                'dynamodb',
+                'HieraticDynamoDBTestOrganization',
+                region_name=ddb_region,
+                use_ssl=False,
+                endpoint_url='{}:{}'.format(ddb_host, ddb_port),
+            )
 
     return OrganizationsRes
 
@@ -106,5 +126,5 @@ def test_query(organization_table, user_table, RootResource, Organization, User)
     ))
 
     assert len(list(organization_res['users'].query())) == 3
-    assert [u.data.id for u in organization_res['users'].query(index='CreatedAtIndex', organization_id__eq=0)] == [2, 0, 1]
-    assert [u.data.id for u in organization_res['users'].query(index='NameIndex', name__eq='test')] == [2, 0]
+    assert [u.data.id for u in organization_res['users'].query(index='CreatedAtIndex', KeyConditionExpression=Key('organization_id').eq(0))] == [1, 0, 2]
+    assert [u.data.id for u in organization_res['users'].query(index='NameIndex', KeyConditionExpression=Key('name').eq('test'), ScanIndexForward=False)] == [2, 0]

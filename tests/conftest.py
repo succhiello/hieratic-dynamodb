@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from decimal import Decimal
 
 from six import string_types
 
@@ -27,7 +28,7 @@ dt = Any(datetime, datetime.fromtimestamp)
 
 def pytest_addoption(parser):
     parser.addoption('--ddb-region', default='us-east-1')
-    parser.addoption('--ddb-host', default='localhost')
+    parser.addoption('--ddb-host', default='http://localhost')
     parser.addoption('--ddb-port', default=8000)
 
 
@@ -48,7 +49,7 @@ def ddb_port(request):
 
 @fixture(scope='module')
 def ddb(ddb_region, ddb_host, ddb_port):
-    return boto3.resource('dynamodb', endpoint_url='http://{}:{}'.format(ddb_host, ddb_port))
+    return boto3.resource('dynamodb', endpoint_url='{}:{}'.format(ddb_host, ddb_port))
 
 
 def make_table(ddb, name, **kwargs):
@@ -164,7 +165,16 @@ def Organization():
 
 @fixture
 def User():
-    return typedtuple('User', {'organization_id': IdSchema, 'id': IdSchema, Optional('name'): six_string, Optional('created_at'): dt})
+    return typedtuple('User', {
+        'organization_id': IdSchema,
+        'id': IdSchema,
+        Optional('name'): six_string,
+        Optional('created_at'): dt,
+        Optional('phone'): {
+            'home': six_string,
+            'work': six_string,
+        },
+    })
 
 
 @fixture
@@ -174,7 +184,7 @@ def UserResource(User):
         data_class=User,
         converters={
             'dynamodb': {
-                'created_at': lambda dt: time.mktime(dt.timetuple()) + dt.microsecond / 1e6,
+                'created_at': lambda dt: Decimal(time.mktime(dt.timetuple()) + dt.microsecond / 1e6),
             },
         },
     )

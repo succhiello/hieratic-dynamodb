@@ -2,6 +2,8 @@ from pytest import fixture, raises
 
 from datetime import datetime
 
+from boto3.dynamodb.conditions import Key
+
 from hieratic.collection import CollectionResource
 from hieratic.index import SimpleIndex
 
@@ -15,7 +17,15 @@ def UsersResource(UserResource, ddb_region, ddb_host, ddb_port):
     )
     class UsersRes(CollectionResource):
         def __init__(self):
-            CollectionResource.__init__(self, None, 'users', 'dynamodb', 'HieraticDynamoDBTestUser', ddb_region, ddb_host, False, ddb_port)
+            CollectionResource.__init__(
+                self, None,
+                'users',
+                'dynamodb',
+                'HieraticDynamoDBTestUser',
+                region_name=ddb_region,
+                use_ssl=False,
+                endpoint_url='{}:{}'.format(ddb_host, ddb_port),
+            )
 
     return UsersRes
 
@@ -28,27 +38,56 @@ class TestFlat(object):
 
         now = datetime.now()
 
-        user_resource = users_resource.create(User(organization_id=0, id=0, created_at=now))
+        user_resource = users_resource.create(User(organization_id=0, id=0, created_at=now, phone={
+            'home': '00011112222',
+            'work': '33344445555',
+        }))
         user = user_resource.data
         assert user.organization_id == 0
         assert user.id == 0
         assert user.created_at == now
+        assert user.phone == {
+            'home': '00011112222',
+            'work': '33344445555',
+        }
 
         user_resource = users_resource['0_0']
         user = user_resource.data
         assert user.organization_id == 0
         assert user.id == 0
         assert user.created_at == now
+        assert user.phone == {
+            'home': '00011112222',
+            'work': '33344445555',
+        }
 
         user_ressource = users_resource.retrieve(0, 0)
         user = user_resource.data
         assert user.organization_id == 0
         assert user.id == 0
         assert user.created_at == now
+        assert user.phone == {
+            'home': '00011112222',
+            'work': '33344445555',
+        }
 
-        user_resource.update(name='updated')
+        user_resource.update(name='updated', phone={'work': '66677778888'})
         user = user_resource.data
         assert user.name == 'updated'
+        assert user.phone == {
+            'home': '00011112222',
+            'work': '66677778888',
+        }
+
+        raw_user = users_resource.engine.table.get_item(Key={
+            'organization_id': 0,
+            'id': 0,
+        })['Item']
+        assert raw_user['name'] == 'updated'
+        assert raw_user['phone'] == {
+            'home': '00011112222',
+            'work': '66677778888',
+        }
 
         user_resource.delete()
         user = user_resource.data
@@ -61,12 +100,12 @@ class TestFlat(object):
             users_resource.create(User(organization_id=0, id=1), context)
             users_resource.create(User(organization_id=0, id=2), context)
             users_resource.create(User(organization_id=0, id=3), context)
-            assert len(list(users_resource.query(organization_id__eq=0))) == 0
+            assert len(list(users_resource.query(KeyConditionExpression=Key('organization_id').eq(0)))) == 0
 
-        assert [1, 2, 3] == [u_res.data.id for u_res in users_resource.query(organization_id__eq=0, reverse=True)]
+        assert [1, 2, 3] == [u_res.data.id for u_res in users_resource.query(KeyConditionExpression=Key('organization_id').eq(0))]
 
         assert [1, 3] == sorted(
             u_res.data.id for u_res in
-            users_resource.bulk_get(keys=[{'organization_id': 0, 'id': 1},
+            users_resource.bulk_get(Keys=[{'organization_id': 0, 'id': 1},
                                           {'organization_id': 0, 'id': 3}])
         )

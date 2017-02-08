@@ -1,9 +1,9 @@
+from collections import MutableMapping
+
 from six import iteritems
 from six.moves import reduce
 
-from collections import MutableMapping
-
-import boto3
+from boto3.session import Session
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
@@ -21,46 +21,73 @@ class Item(ItemEngine):
     def update(self, index, patch, context, updates):
         if patch:
             self.collection.table.update_item(
-                Key=index,
-                UpdateExpression=self.__make_update_expression_args(updates),
+                Key=index.make_key_dict_from_dict(self.__item),
+                **Item.__make_update_expression_args(updates),
             )
+            Item.__deep_update(self.__item, updates)
         else:
             if context is None:
                 self.collection.table.put_item(Item=updates)
             else:
                 context.put_item(self.collection.table, updates)
+            self.__item = updates
 
     def delete(self, index, context):
         if context is None:
-            self.collection.table.delete_item(Key=index)
+            self.collection.table.delete_item(Key=index.make_key_dict_from_dict(self.__item))
         else:
             context.delete_item(
                 self.collection.table,
                 **(index.make_key_dict_from_dict(self.get_dict()))
             )
+        self.__item = None
 
     def get_dict(self):
-        return self.__item._data
+        return self.__item
 
-    def __make_update_expression_args(self, updates):
-        flattened = self.__flatten_dict(updates, [], [])
+    @staticmethod
+    def __make_update_expression_args(updates):
+        flattened = Item.__flatten_dict(updates, [], [])
         return {
-            'UpdateExpression': 'set {0}'.format(['{0}={1}'.format(x[0], x[1]) for x in flattened].join(', ')),
-            'ExpressionAttributeValues': dict([(x[1], x[2]) for x in flattened]),
+            'UpdateExpression': 'SET ' + ', '.join(['#{0} = :{1}'.format('.#'.join(x[0]), '_'.join(x[0])) for x in flattened]),
+            'ExpressionAttributeValues': dict((':' + '_'.join(x[0]), x[1]) for x in flattened),
+            'ExpressionAttributeNames': dict(('#{}'.format(x), x) for x in set(key for i in flattened for key in i[0])),
         }
-    
-    def __flatten_dict(self, v, keys, acc):
+
+    @staticmethod
+    def __flatten_dict(v, keys, acc):
         if isinstance(v, MutableMapping):
-            return reduce(lambda a, x: self.__flatten_dict(x[1], keys + [x[0]], a), iteritems(v), acc)
+            return reduce(lambda a, x: Item.__flatten_dict(x[1], keys + [x[0]], a), iteritems(v), acc)
         else:
-            return acc + [('.'.join(keys), ':{0}'.format('_'.join(keys)), v)]
+            return acc + [(keys, v)]
+    
+    @staticmethod
+    def __deep_update(dst, src):
+        for k, v in iteritems(src):
+            if isinstance(v, MutableMapping):
+                dst[k] = Item.__deep_update(dst.get(k, {}), v)
+            else:
+                dst[k] = src[k]
+        return dst
 
 
 class Collection(CollectionEngine):
 
-    def __init__(self, name, table_name, **kwargs):
-        self.__table = boto3.resource('dynamodb', **kwargs).Table(table_name)
-    
+    def __init__(
+        self, name, table_name,
+        aws_access_key_id=None, aws_secret_access_key=None, aws_session_token=None,
+        region_name=None,
+        profile_name=None,
+        use_ssl=True, verify=None, endpoint_url=None
+    ):
+        self.__table = Session(
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_session_token=aws_session_token,
+            region_name=region_name,
+            profile_name=profile_name,
+        ).resource('dynamodb', use_ssl=use_ssl, verify=verify, endpoint_url=endpoint_url).Table(table_name)
+
     @property
     def table(self):
         return self.__table
@@ -74,18 +101,22 @@ class Collection(CollectionEngine):
 
     def retrieve_raw_item(self, key_dict):
         response = self.__table.get_item(Key=key_dict)
-        if 'Items' not in response:
+        if 'Item' not in response:
             raise KeyError(key_dict)
-        return response['Items'][0]
+        return response['Item']
 
     def query_raw_items(self, index, parent_key_value, **kwargs):
         if parent_key_value is not None:
             kwargs['KeyConditionExpression'] = Key(parent_key_value[0]).eq(parent_key_value[1])
-        return self.__table.query(IndexName=index, **kwargs)['Items']
+        if index is not None:
+            kwargs['IndexName'] = index
+        return self.__table.query(**kwargs)['Items']
 
     def bulk_get_raw_items(self, **kwargs):
-        return self.__table.batch_get(**kwargs)
+        return self.__table.meta.client.batch_get_item(
+            RequestItems={self.__table.name: kwargs}
+        ).get('Responses', {}).get(self.__table.name, [])
 
     @classmethod
     def get_context(cls, *args, **kwargs):
-        return Context()
+        return Context(*args, **kwargs)
