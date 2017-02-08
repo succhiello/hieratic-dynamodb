@@ -1,9 +1,11 @@
-from six import iteritems
+from collections import MutableMapping
 
-import boto.dynamodb2
-from boto.dynamodb2.items import Item as BotoItem
-from boto.dynamodb2.table import Table
-from boto.dynamodb2.exceptions import ItemNotFound
+from six import iteritems
+from six.moves import reduce
+
+from boto3.session import Session
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from hieratic.engine import ItemEngine, CollectionEngine
 
@@ -16,49 +18,75 @@ class Item(ItemEngine):
         ItemEngine.__init__(self, collection, raw_item)
         self.__item = raw_item
 
-    @property
-    def ddb_item(self):
-        return self.__item
-
-    def update(self, patch, context, updates):
+    def update(self, index, patch, context, updates):
         if patch:
-            for k, v in iteritems(updates):
-                self.__item[k] = v
-            self.__item.partial_save()
+            self.collection.table.update_item(
+                Key=index.make_key_dict_from_dict(self.__item),
+                **Item.__make_update_expression_args(updates),
+            )
+            Item.__deep_update(self.__item, updates)
         else:
             if context is None:
-                self.__item = BotoItem(self.__item.table, updates)
-                self.__item.save(True)
+                self.collection.table.put_item(Item=updates)
             else:
-                context.put_item(self.__table, updates)
+                context.put_item(self.collection.table, updates)
+            self.__item = updates
 
     def delete(self, index, context):
         if context is None:
-            self.__item.delete()
+            self.collection.table.delete_item(Key=index.make_key_dict_from_dict(self.__item))
         else:
             context.delete_item(
-                self.__table,
+                self.collection.table,
                 **(index.make_key_dict_from_dict(self.get_dict()))
             )
+        self.__item = None
 
     def get_dict(self):
-        return self.__item._data
+        return self.__item
+
+    @staticmethod
+    def __make_update_expression_args(updates):
+        flattened = Item.__flatten_dict(updates, [], [])
+        return {
+            'UpdateExpression': 'SET ' + ', '.join(['#{0} = :{1}'.format('.#'.join(x[0]), '_'.join(x[0])) for x in flattened]),
+            'ExpressionAttributeValues': dict((':' + '_'.join(x[0]), x[1]) for x in flattened),
+            'ExpressionAttributeNames': dict(('#{}'.format(x), x) for x in set(key for i in flattened for key in i[0])),
+        }
+
+    @staticmethod
+    def __flatten_dict(v, keys, acc):
+        if isinstance(v, MutableMapping):
+            return reduce(lambda a, x: Item.__flatten_dict(x[1], keys + [x[0]], a), iteritems(v), acc)
+        else:
+            return acc + [(keys, v)]
+    
+    @staticmethod
+    def __deep_update(dst, src):
+        for k, v in iteritems(src):
+            if isinstance(v, MutableMapping):
+                dst[k] = Item.__deep_update(dst.get(k, {}), v)
+            else:
+                dst[k] = src[k]
+        return dst
 
 
 class Collection(CollectionEngine):
 
-    def __init__(self, name, table_name, region, host=None, is_secure=None, port=None):
-        kwargs = {}
-        if host is not None:
-            kwargs['host'] = host
-        if is_secure is not None:
-            kwargs['is_secure'] = is_secure
-        if port is not None:
-            kwargs['port'] = port
-        self.__table = Table(
-            table_name=table_name,
-            connection=boto.dynamodb2.connect_to_region(region, **kwargs),
-        )
+    def __init__(
+        self, name, table_name,
+        aws_access_key_id=None, aws_secret_access_key=None, aws_session_token=None,
+        region_name=None,
+        profile_name=None,
+        use_ssl=True, verify=None, endpoint_url=None
+    ):
+        self.__table = Session(
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_session_token=aws_session_token,
+            region_name=region_name,
+            profile_name=profile_name,
+        ).resource('dynamodb', use_ssl=use_ssl, verify=verify, endpoint_url=endpoint_url).Table(table_name)
 
     @property
     def table(self):
@@ -66,27 +94,29 @@ class Collection(CollectionEngine):
 
     def create_raw_item(self, index, data_dict, context):
         if context is None:
-            self.__table.put_item(data_dict)
+            self.__table.put_item(Item=data_dict)
         else:
             context.put_item(self.__table, data_dict)
-        return BotoItem(self.__table, data_dict, True)
+        return data_dict
 
     def retrieve_raw_item(self, key_dict):
-        try:
-            return self.__table.get_item(**key_dict)
-        except ItemNotFound:
+        response = self.__table.get_item(Key=key_dict)
+        if 'Item' not in response:
             raise KeyError(key_dict)
-        except:
-            raise
+        return response['Item']
 
     def query_raw_items(self, index, parent_key_value, **kwargs):
         if parent_key_value is not None:
-            kwargs['{}__eq'.format(parent_key_value[0])] = parent_key_value[1]
-        return self.__table.query(index=index, **kwargs)
+            kwargs['KeyConditionExpression'] = Key(parent_key_value[0]).eq(parent_key_value[1])
+        if index is not None:
+            kwargs['IndexName'] = index
+        return self.__table.query(**kwargs)['Items']
 
     def bulk_get_raw_items(self, **kwargs):
-        return self.__table.batch_get(**kwargs)
+        return self.__table.meta.client.batch_get_item(
+            RequestItems={self.__table.name: kwargs}
+        ).get('Responses', {}).get(self.__table.name, [])
 
     @classmethod
     def get_context(cls, *args, **kwargs):
-        return Context()
+        return Context(*args, **kwargs)

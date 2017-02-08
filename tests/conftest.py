@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from decimal import Decimal
 
 from six import string_types
 
@@ -9,11 +10,7 @@ from voluptuous import Optional, All, Any, Range, Coerce
 
 from typedtuple import typedtuple
 
-from boto.dynamodb2 import connect_to_region
-from boto.dynamodb2.table import Table
-from boto.dynamodb2.fields import HashKey, RangeKey, AllIndex, GlobalAllIndex
-from boto.dynamodb2.types import NUMBER
-from boto.exception import JSONResponseError
+import boto3
 
 from hieratic.item import ItemResource
 
@@ -31,7 +28,7 @@ dt = Any(datetime, datetime.fromtimestamp)
 
 def pytest_addoption(parser):
     parser.addoption('--ddb-region', default='us-east-1')
-    parser.addoption('--ddb-host', default='localhost')
+    parser.addoption('--ddb-host', default='http://localhost')
     parser.addoption('--ddb-port', default=8000)
 
 
@@ -52,24 +49,19 @@ def ddb_port(request):
 
 @fixture(scope='module')
 def ddb(ddb_region, ddb_host, ddb_port):
-    return connect_to_region(ddb_region, host=ddb_host, is_secure=False, port=ddb_port)
+    return boto3.resource('dynamodb', endpoint_url='{}:{}'.format(ddb_host, ddb_port))
 
 
 def make_table(ddb, name, **kwargs):
 
-    table = Table(table_name=name, connection=ddb, **kwargs)
+    ddb.create_table(
+        TableName=name,
+        **kwargs,
+    )
 
-    while True:
-        try:
-            if table.describe()['Table']['TableStatus'] == 'ACTIVE':
-                return table
-            else:
-                time.sleep(1)
-        except JSONResponseError as exc:
-            if exc.error_code == 'ResourceNotFoundException':
-                table = Table.create(table_name=name, connection=ddb, **kwargs)
-            else:
-                raise
+    table = ddb.Table(name)
+    table.wait_until_exists()
+    return table
 
 
 @fixture(scope='module')
@@ -78,7 +70,18 @@ def organization_table(request, ddb):
     table = make_table(
         ddb,
         'HieraticDynamoDBTestOrganization',
-        schema=[HashKey('id', data_type=NUMBER)]
+        AttributeDefinitions=[{
+            'AttributeName': 'id',
+            'AttributeType': 'N',
+        }],
+        KeySchema=[{
+            'KeyType': 'HASH',
+            'AttributeName': 'id',
+        }],
+        ProvisionedThroughput={
+            'ReadCapacityUnits': 5,
+            'WriteCapacityUnits': 5,
+        },
     )
 
     def fin():
@@ -90,17 +93,63 @@ def organization_table(request, ddb):
 @fixture(scope='module')
 def user_table(request, ddb):
 
-    table = make_table(ddb, 'HieraticDynamoDBTestUser', schema=[
-        HashKey('organization_id', data_type=NUMBER),
-        RangeKey('id', data_type=NUMBER)],
-        indexes=[AllIndex('CreatedAtIndex', parts=[
-            HashKey('organization_id', data_type=NUMBER),
-            RangeKey('created_at', data_type=NUMBER),
-        ])],
-        global_indexes=[GlobalAllIndex('NameIndex', parts=[
-            HashKey('name'),
-            RangeKey('id', data_type=NUMBER),
-        ])],
+    table = make_table(
+        ddb,
+        'HieraticDynamoDBTestUser',
+        AttributeDefinitions=[{
+            'AttributeName': 'organization_id',
+            'AttributeType': 'N',
+        }, {
+            'AttributeName': 'id',
+            'AttributeType': 'N',
+        }, {
+            'AttributeName': 'created_at',
+            'AttributeType': 'N',
+        }, {
+            'AttributeName': 'name',
+            'AttributeType': 'S',
+        }],
+        KeySchema=[{
+            'KeyType': 'HASH',
+            'AttributeName': 'organization_id',
+        }, {
+            'KeyType': 'RANGE',
+            'AttributeName': 'id',
+        }],
+        LocalSecondaryIndexes=[{
+            'IndexName': 'CreatedAtIndex',
+            'KeySchema': [{
+                'KeyType': 'HASH',
+                'AttributeName': 'organization_id',
+            }, {
+                'KeyType': 'RANGE',
+                'AttributeName': 'created_at',
+            }],
+            'Projection': {
+                'ProjectionType': 'ALL',
+            }
+        }],
+        GlobalSecondaryIndexes=[{
+            'IndexName': 'NameIndex',
+            'KeySchema': [{
+                'KeyType': 'HASH',
+                'AttributeName': 'name',
+            }, {
+                'KeyType': 'RANGE',
+                'AttributeName': 'id',
+            }],
+            'ProvisionedThroughput': {
+                'ReadCapacityUnits': 5,
+                'WriteCapacityUnits': 5,
+            },
+            'Projection': {
+                'ProjectionType': 'ALL',
+            },
+        }],
+        ProvisionedThroughput={
+            'ReadCapacityUnits': 5,
+            'WriteCapacityUnits': 5,
+        },
     )
 
     def fin():
@@ -116,7 +165,16 @@ def Organization():
 
 @fixture
 def User():
-    return typedtuple('User', {'organization_id': IdSchema, 'id': IdSchema, Optional('name'): six_string, Optional('created_at'): dt})
+    return typedtuple('User', {
+        'organization_id': IdSchema,
+        'id': IdSchema,
+        Optional('name'): six_string,
+        Optional('created_at'): dt,
+        Optional('phone'): {
+            'home': six_string,
+            'work': six_string,
+        },
+    })
 
 
 @fixture
@@ -126,7 +184,7 @@ def UserResource(User):
         data_class=User,
         converters={
             'dynamodb': {
-                'created_at': lambda dt: time.mktime(dt.timetuple()) + dt.microsecond / 1e6,
+                'created_at': lambda dt: Decimal(time.mktime(dt.timetuple()) + dt.microsecond / 1e6),
             },
         },
     )
