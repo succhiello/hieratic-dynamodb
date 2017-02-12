@@ -73,20 +73,8 @@ class Item(ItemEngine):
 
 class Collection(CollectionEngine):
 
-    def __init__(
-        self, name, table_name,
-        aws_access_key_id=None, aws_secret_access_key=None, aws_session_token=None,
-        region_name=None,
-        profile_name=None,
-        use_ssl=True, verify=None, endpoint_url=None
-    ):
-        self.__table = Session(
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            aws_session_token=aws_session_token,
-            region_name=region_name,
-            profile_name=profile_name,
-        ).resource('dynamodb', use_ssl=use_ssl, verify=verify, endpoint_url=endpoint_url).Table(table_name)
+    def __init__(self, name, table_name, boto3_dynamodb_resource):
+        self.__table = boto3_dynamodb_resource.Table(table_name)
 
     @property
     def table(self):

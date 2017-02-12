@@ -9,7 +9,7 @@ from hieratic.index import SimpleIndex
 
 
 @fixture
-def UsersResource(UserResource, ddb_region, ddb_host, ddb_port):
+def UsersResource(UserResource, ddb):
 
     @CollectionResource.define(
         item_class=UserResource,
@@ -22,9 +22,7 @@ def UsersResource(UserResource, ddb_region, ddb_host, ddb_port):
                 'users',
                 'dynamodb',
                 'HieraticDynamoDBTestUser',
-                region_name=ddb_region,
-                use_ssl=False,
-                endpoint_url='{}:{}'.format(ddb_host, ddb_port),
+                ddb,
             )
 
     return UsersRes

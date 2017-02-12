@@ -12,7 +12,7 @@ from hieratic.index import SimpleIndex
 
 
 @fixture
-def UsersResource(UserResource, ddb_region, ddb_host, ddb_port):
+def UsersResource(UserResource, ddb):
 
     @CollectionResource.define(
         item_class=UserResource,
@@ -26,9 +26,7 @@ def UsersResource(UserResource, ddb_region, ddb_host, ddb_port):
                 name,
                 'dynamodb',
                 'HieraticDynamoDBTestUser',
-                region_name=ddb_region,
-                use_ssl=False,
-                endpoint_url='{}:{}'.format(ddb_host, ddb_port),
+                ddb,
             )
 
     return UsersRes
@@ -53,7 +51,7 @@ def OrganizationResource(Organization, UsersResource):
 
 
 @fixture
-def OrganizationsResource(OrganizationResource, ddb_region, ddb_host, ddb_port):
+def OrganizationsResource(OrganizationResource, ddb):
 
     @CollectionResource.define(
         item_class=OrganizationResource,
@@ -67,9 +65,7 @@ def OrganizationsResource(OrganizationResource, ddb_region, ddb_host, ddb_port):
                 name,
                 'dynamodb',
                 'HieraticDynamoDBTestOrganization',
-                region_name=ddb_region,
-                use_ssl=False,
-                endpoint_url='{}:{}'.format(ddb_host, ddb_port),
+                ddb,
             )
 
     return OrganizationsRes
