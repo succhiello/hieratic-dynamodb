@@ -9,7 +9,7 @@ requires = [
 
 setup(
     name='hieratic_dynamodb',
-    version='0.0.5',
+    version='0.0.6',
     description='dynamodb plugin for hieratic.',
     author='Satoshi Ebihara',
     author_email='kiri@succhiello.net',
