@@ -38,7 +38,7 @@ class Item(ItemEngine):
         else:
             context.delete_item(
                 self.collection.table,
-                **(index.make_key_dict_from_dict(self.get_dict()))
+                index.make_key_dict_from_dict(self.get_dict()),
             )
         self.__item = None
 
