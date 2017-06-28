@@ -100,10 +100,17 @@ class TestFlat(object):
             users_resource.create(User(organization_id=0, id=3), context)
             assert len(list(users_resource.query(KeyConditionExpression=Key('organization_id').eq(0)))) == 0
 
-        assert [1, 2, 3] == [u_res.data.id for u_res in users_resource.query(KeyConditionExpression=Key('organization_id').eq(0))]
+        user_resources = [u_res for u_res in users_resource.query(KeyConditionExpression=Key('organization_id').eq(0))]
+        assert [1, 2, 3] == [u_res.data.id for u_res in user_resources]
 
         assert [1, 3] == sorted(
             u_res.data.id for u_res in
             users_resource.bulk_get(Keys=[{'organization_id': 0, 'id': 1},
                                           {'organization_id': 0, 'id': 3}])
         )
+
+        with CollectionResource.get_context('dynamodb') as context:
+            for u_res in user_resources:
+                u_res.delete(context)
+            assert len(list(users_resource.query(KeyConditionExpression=Key('organization_id').eq(0)))) == 3
+        assert len(list(users_resource.query(KeyConditionExpression=Key('organization_id').eq(0)))) == 0
