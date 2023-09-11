@@ -23,7 +23,7 @@ def six_string(v):
     return v
 
 
-dt = Any(datetime, datetime.fromtimestamp)
+dt = Any(datetime, lambda x: datetime.fromtimestamp(float(x)))
 
 
 def pytest_addoption(parser):
